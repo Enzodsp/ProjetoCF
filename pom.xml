@@ -23,6 +23,20 @@
             <artifactId>flatlaf</artifactId>
             <version>3.2.5</version>
         </dependency>
+        
+        <!-- https://mvnrepository.com/artifact/net.sf.jasperreports/jasperreports -->
+        <dependency>
+            <groupId>net.sf.jasperreports</groupId>
+            <artifactId>jasperreports</artifactId>
+            <version>7.0.3</version>
+        </dependency>
+
+        <!-- https://mvnrepository.com/artifact/net.sf.jasperreports/jasperreports -->
+        <dependency>
+            <groupId>net.sf.jasperreports</groupId>
+            <artifactId>jasperreports-pdf</artifactId>
+            <version>7.0.3</version>
+        </dependency>
         <dependency>
             <groupId>unknown.binary</groupId>
             <artifactId>Componentes</artifactId>

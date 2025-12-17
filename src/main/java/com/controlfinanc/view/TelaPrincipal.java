@@ -1,151 +1,188 @@
 package com.controlfinanc.view;
 
 import com.controlfinanc.dao.LancamentoDAO;
+import com.controlfinanc.database.Conexao;
 import com.controlfinanc.model.Lancamento;
-import java.time.LocalDate;
-import java.text.NumberFormat;
-import java.util.Locale;
-import java.util.List;
-import javax.swing.JOptionPane;
-import javax.swing.table.DefaultTableModel;
+import com.controlfinanc.util.RelatorioUtil;
 import java.awt.Color;
+import java.awt.Component;
+import java.sql.Connection;
+import java.text.NumberFormat;
+import java.time.LocalDate;
+import java.time.format.DateTimeFormatter;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Locale;
+import java.util.Map;
+import javax.swing.JOptionPane;
+import javax.swing.JTable;
 import javax.swing.table.DefaultTableCellRenderer;
-import javax.swing.JLabel;
-
+import javax.swing.table.DefaultTableModel;
 
 public class TelaPrincipal extends javax.swing.JFrame {
 
-// Variável global para controlar qual ID está sendo editado 
-    private int idEmEdicaoDespesa = 0; 
-    private int idEmEdicaoReceita = 0;
-    LancamentoDAO dao = new LancamentoDAO();
-    
+    private int idEmEdicao = 0;
+
+    private final String[] CAT_RECEITAS = {"SALÁRIO", "INVESTIMENTO", "PRESENTE", "PRÊMIO", "OUTROS"};
+    private final String[] CAT_DESPESAS = {"CASA", "MERCADO", "TRANSPORTE", "LAZER", "SAÚDE", "EDUCAÇÃO", "VESTUÁRIO", "ELETRÔNICOS", "OUTROS"};
+
     public TelaPrincipal() {
         initComponents();
-        atualizarTabelaDespesas();
-        atualizarTabelaReceitas();
-        atualizarDashboard();
-        
-        java.time.format.DateTimeFormatter formatoBr = java.time.format.DateTimeFormatter.ofPattern("dd/MM/yyyy");
-        String dataHojeFormatada = java.time.LocalDate.now().format(formatoBr);
-        txtDataDespesa.setText(dataHojeFormatada);
-        txtDataReceita.setText(dataHojeFormatada);
-        
-        // PARA ABRIR MAXIMIZADO:
-        this.setExtendedState(java.awt.Frame.MAXIMIZED_BOTH);
 
-        estilizarTabela(tabelaDespesas);
-        estilizarTabela(tabelaReceita);
+        this.setExtendedState(MAXIMIZED_BOTH); // Tela Cheia
+
+        DateTimeFormatter formatoBr = DateTimeFormatter.ofPattern("dd/MM/yyyy");
+        txtData.setText(LocalDate.now().format(formatoBr));
+
+        configurarCategorias();
+        configurarRenderizadorDeCores();
+        atualizarTabelaGeral();
+        atualizarDashboard();
     }
 
     // --- MÉTODOS AUXILIARES ---
-    
-    private void atualizarTabelaDespesas() {
+    // Muda as opções do combobox de acordo com o Tipo 
+    private void configurarCategorias() {
+        cbCategoria.removeAllItems();
+        String tipo = cbTipo.getSelectedItem().toString();
+
+        if (tipo.equals("RECEITA")) {
+            for (String c : CAT_RECEITAS) {
+                cbCategoria.addItem(c);
+            }
+        } else {
+            for (String c : CAT_DESPESAS) {
+                cbCategoria.addItem(c);
+            }
+        }
+    }
+
+    // Busca TUDO do banco e preenche a tabela
+    private void atualizarTabelaGeral() {
         LancamentoDAO dao = new LancamentoDAO();
-        List<Lancamento> lista = dao.listarPorTipo("DESPESA");
 
-        DefaultTableModel modelo = (DefaultTableModel) tabelaDespesas.getModel();
-        modelo.setNumRows(0); 
+        int idLogado = com.controlfinanc.model.Sessao.usuarioLogado.getId();
 
-        java.time.format.DateTimeFormatter formatadorData = java.time.format.DateTimeFormatter.ofPattern("dd/MM/yyyy");
-        java.text.NumberFormat formatadorMoeda = java.text.NumberFormat.getCurrencyInstance(new java.util.Locale("pt", "BR"));
+        List<Lancamento> lista = dao.listarTodos(idLogado);
+
+        DefaultTableModel modelo = (DefaultTableModel) tabelaExtrato.getModel();
+        modelo.setNumRows(0);
+
+        DateTimeFormatter formatadorData = DateTimeFormatter.ofPattern("dd/MM/yyyy");
+        NumberFormat formatadorMoeda = NumberFormat.getCurrencyInstance(new Locale("pt", "BR"));
 
         for (Lancamento l : lista) {
             modelo.addRow(new Object[]{
                 l.getId(),
-                l.getData().format(formatadorData),   
+                l.getData().format(formatadorData),
                 l.getDescricao(),
+                l.getTipo(),
                 l.getCategoria(),
-                formatadorMoeda.format(l.getValor())  
+                formatadorMoeda.format(l.getValor())
             });
         }
+
+        ajustarLarguraColunas(tabelaExtrato);
     }
 
-    private void atualizarTabelaReceitas() {
-        LancamentoDAO dao = new LancamentoDAO();
-        List<Lancamento> lista = dao.listarPorTipo("RECEITA");
-
-        DefaultTableModel modelo = (DefaultTableModel) tabelaReceita.getModel();
-        modelo.setNumRows(0); 
-
-        // Formatadores
-        java.time.format.DateTimeFormatter formatadorData = java.time.format.DateTimeFormatter.ofPattern("dd/MM/yyyy");
-        java.text.NumberFormat formatadorMoeda = java.text.NumberFormat.getCurrencyInstance(new java.util.Locale("pt", "BR"));
-
-        for (Lancamento l : lista) {
-
-            modelo.addRow(new Object[]{
-                l.getId(),
-                l.getData().format(formatadorData),    
-                l.getDescricao(),
-                l.getCategoria(),
-                formatadorMoeda.format(l.getValor())   
-            });
-        }
-    }
-    
+    // Calcula Totais e Atualiza os Cards
     private void atualizarDashboard() {
-    LancamentoDAO dao = new LancamentoDAO();
-    
-    //Busca os valores no banco
-    double totalReceita = dao.getSomaPorTipo("RECEITA");
-    double totalDespesa = dao.getSomaPorTipo("DESPESA");
-    double saldo = totalReceita - totalDespesa;
-    
-    //Formata para dinheiro brasileiro
-    NumberFormat formatoMoeda = NumberFormat.getCurrencyInstance(new Locale("pt", "BR"));
-    
-    //Atualiza os textos
-    lblTotalReceita.setText(formatoMoeda.format(totalReceita));
-    lblTotalDespesa.setText(formatoMoeda.format(totalDespesa));
-    lblSaldo.setText(formatoMoeda.format(saldo));
-    
-    //Mudar cor do saldo
-    if (saldo < 0) {
-        lblSaldo.setForeground(Color.RED);
-    } else if (saldo == 0) {
-        lblSaldo.setForeground(new Color(240, 237, 204));
-    } else {
-        lblSaldo.setForeground(new Color(0, 100, 0)); // Verde escuro
+        LancamentoDAO dao = new LancamentoDAO();
+        int idLogado = com.controlfinanc.model.Sessao.usuarioLogado.getId();
+
+        double receita = dao.getSomaPorTipo("RECEITA", idLogado);
+        double despesa = dao.getSomaPorTipo("DESPESA", idLogado);
+        double saldo = receita - despesa;
+
+        NumberFormat nf = NumberFormat.getCurrencyInstance(new Locale("pt", "BR"));
+
+        lblTotalReceita.setText(nf.format(receita));
+        lblTotalDespesa.setText(nf.format(despesa));
+        lblSaldo.setText(nf.format(saldo));
+
+        // Cor do Saldo
+        if (saldo < 0) {
+            lblSaldo.setForeground(Color.RED);
+        } else if (saldo == 0) {
+            lblSaldo.setForeground(new Color(240, 237, 204)); // Bege
+        } else {
+            lblSaldo.setForeground(new Color(46, 204, 113)); // Verde
+        }
     }
-}
+
+    private void limparCampos() {
+        txtDescricao.setText("");
+        txtValor.setText("");
+        idEmEdicao = 0;
+
+        // Reseta data para hoje
+        DateTimeFormatter formatoBr = DateTimeFormatter.ofPattern("dd/MM/yyyy");
+        txtData.setText(LocalDate.now().format(formatoBr));
+
+        tabelaExtrato.clearSelection();
+    }
+
+    // --- CORES NA TABELA ---
+    private void configurarRenderizadorDeCores() {
+        tabelaExtrato.setDefaultRenderer(Object.class, new DefaultTableCellRenderer() {
+            @Override
+            public Component getTableCellRendererComponent(JTable table, Object value, boolean isSelected, boolean hasFocus, int row, int column) {
+                Component c = super.getTableCellRendererComponent(table, value, isSelected, hasFocus, row, column);
+
+                String tipo = table.getModel().getValueAt(row, 3).toString();
+
+                if (!isSelected) {
+                    if ("RECEITA".equals(tipo)) {
+                        c.setForeground(new Color(0, 204, 0));
+                    } else {
+                        c.setForeground(Color.RED);
+                    }
+                }
+                setHorizontalAlignment(CENTER);
+                return c;
+            }
+        });
+        tabelaExtrato.setRowHeight(30);
+    }
+
+    public void ajustarLarguraColunas(javax.swing.JTable tabela) {
+        for (int coluna = 0; coluna < tabela.getColumnCount(); coluna++) {
+
+            int largura = tabela.getColumnModel().getColumn(coluna).getHeaderValue().toString().length() * 10;
+
+            for (int linha = 0; linha < tabela.getRowCount(); linha++) {
+                Object valor = tabela.getValueAt(linha, coluna);
+                if (valor != null) {
+                    int tamanhoTexto = valor.toString().length() * 10; // *10 é um fator de pixels por caractere
+                    if (tamanhoTexto > largura) {
+                        largura = tamanhoTexto;
+                    }
+                }
+            }
+
+            if (largura > 400) {
+                largura = 400;
+            }
+
+            tabela.getColumnModel().getColumn(coluna).setPreferredWidth(largura + 10); // +10 de margem
+        }
+    }
     
-    private void estilizarTabela(javax.swing.JTable tabela) {
-    // renderizador que centraliza
-    DefaultTableCellRenderer centro = new DefaultTableCellRenderer();
-    centro.setHorizontalAlignment(JLabel.CENTER);
-    // Aplica o renderizador em todas as colunas da tabela
-    for (int i = 0; i < tabela.getColumnCount(); i++) {
-        tabela.getColumnModel().getColumn(i).setCellRenderer(centro);
-    }   
-    // Aumenta a altura da linha 
-    tabela.setRowHeight(30);
-}
-    
-    private void limparCamposDespesa() {
-    txtDescDespesa.setText("");
-    txtValorDespesa.setText("");
-    cbCatDespesa.setSelectedIndex(0);
-    
-    java.time.format.DateTimeFormatter formatoBr = java.time.format.DateTimeFormatter.ofPattern("dd/MM/yyyy");
-    txtDataDespesa.setText(java.time.LocalDate.now().format(formatoBr));
-    
-    idEmEdicaoDespesa = 0;
-    tabelaDespesas.clearSelection();
-}
-    
-    private void limparCamposReceita() {
-    txtDescReceita.setText("");
-    txtValorReceita.setText("");
-    cbCatReceita.setSelectedIndex(0);
-    
-    java.time.format.DateTimeFormatter formatoBr = java.time.format.DateTimeFormatter.ofPattern("dd/MM/yyyy");
-    txtDataReceita.setText(java.time.LocalDate.now().format(formatoBr));
-    
-    idEmEdicaoReceita = 0; 
-    tabelaReceita.clearSelection();
-}
-    
+    private void gerarRelatorio(String tipo) {
+    try {
+        String caminho = "src/main/resources/relatorios/" + tipo + ".jasper";
+
+        Connection con = Conexao.getConexao();
+
+        Map<String, Object> parametros = new HashMap<>();
+
+        RelatorioUtil.abrirPDF(caminho, parametros, con);
+
+    } catch (Exception e) {
+        e.printStackTrace();
+    }
+    }
+
     /**
      * This method is called from within the constructor to initialize the form.
      * WARNING: Do NOT modify this code. The content of this method is always
@@ -156,8 +193,16 @@ public class TelaPrincipal extends javax.swing.JFrame {
     private void initComponents() {
 
         jPanel1 = new javax.swing.JPanel();
-        jTabbedPane = new javax.swing.JTabbedPane();
         jPanel4 = new javax.swing.JPanel();
+        cbTipo = new javax.swing.JComboBox<>();
+        jLabel15 = new javax.swing.JLabel();
+        cbCategoria = new javax.swing.JComboBox<>();
+        jLabel16 = new javax.swing.JLabel();
+        txtDescricao = new javax.swing.JTextField();
+        jLabel17 = new javax.swing.JLabel();
+        txtValor = new javax.swing.JTextField();
+        jLabel18 = new javax.swing.JLabel();
+        txtData = new javax.swing.JTextField();
         jLabel11 = new javax.swing.JLabel();
         lblSaldo = new javax.swing.JLabel();
         jLabel13 = new javax.swing.JLabel();
@@ -166,80 +211,103 @@ public class TelaPrincipal extends javax.swing.JFrame {
         lblTotalDespesa = new javax.swing.JLabel();
         jPanel5 = new javax.swing.JPanel();
         jLabel14 = new javax.swing.JLabel();
-        btnIrReceitas = new javax.swing.JButton();
-        btnIrDespesas = new javax.swing.JButton();
-        jPanel2 = new javax.swing.JPanel();
-        jLabel2 = new javax.swing.JLabel();
-        txtDescDespesa = new javax.swing.JTextField();
-        jLabel3 = new javax.swing.JLabel();
-        txtValorDespesa = new javax.swing.JTextField();
-        jLabel4 = new javax.swing.JLabel();
-        txtDataDespesa = new javax.swing.JTextField();
-        jLabel5 = new javax.swing.JLabel();
-        cbCatDespesa = new javax.swing.JComboBox<>();
-        btnSalvarDespesa = new javax.swing.JButton();
-        btnExcluirDespesa = new javax.swing.JButton();
-        btnLimparDespesa = new javax.swing.JButton();
+        BtnSalvar = new javax.swing.JButton();
+        BtnExcluir = new javax.swing.JButton();
+        BtnLimpar = new javax.swing.JButton();
         jScrollPane1 = new javax.swing.JScrollPane();
-        tabelaDespesas = new javax.swing.JTable();
-        jPanel7 = new javax.swing.JPanel();
-        jLabel1 = new javax.swing.JLabel();
-        jPanel3 = new javax.swing.JPanel();
-        jLabel7 = new javax.swing.JLabel();
-        txtDescReceita = new javax.swing.JTextField();
-        jLabel8 = new javax.swing.JLabel();
-        txtValorReceita = new javax.swing.JTextField();
-        jLabel9 = new javax.swing.JLabel();
-        txtDataReceita = new javax.swing.JTextField();
-        jLabel10 = new javax.swing.JLabel();
-        cbCatReceita = new javax.swing.JComboBox<>();
-        btnSalvarReceita = new javax.swing.JButton();
-        btnExcluirReceita = new javax.swing.JButton();
-        btnLimparReceita = new javax.swing.JButton();
-        jScrollPane2 = new javax.swing.JScrollPane();
-        tabelaReceita = new javax.swing.JTable();
-        jPanel6 = new javax.swing.JPanel();
-        jLabel6 = new javax.swing.JLabel();
+        tabelaExtrato = new javax.swing.JTable();
+        BtnImprimir = new javax.swing.JButton();
 
         setDefaultCloseOperation(javax.swing.WindowConstants.EXIT_ON_CLOSE);
         getContentPane().setLayout(new java.awt.GridBagLayout());
 
         jPanel1.setBackground(new java.awt.Color(2, 52, 63));
 
-        jTabbedPane.setBackground(new java.awt.Color(2, 52, 63));
-        jTabbedPane.setBorder(javax.swing.BorderFactory.createLineBorder(new java.awt.Color(240, 237, 204)));
-        jTabbedPane.setForeground(new java.awt.Color(240, 237, 204));
-        jTabbedPane.setCursor(new java.awt.Cursor(java.awt.Cursor.DEFAULT_CURSOR));
-        jTabbedPane.setFont(new java.awt.Font("Cambria", 1, 14)); // NOI18N
-        jTabbedPane.addChangeListener(new javax.swing.event.ChangeListener() {
-            public void stateChanged(javax.swing.event.ChangeEvent evt) {
-                jTabbedPaneStateChanged(evt);
+        jPanel4.setBackground(new java.awt.Color(2, 52, 63));
+
+        cbTipo.setBackground(new java.awt.Color(240, 237, 204));
+        cbTipo.setFont(new java.awt.Font("Tahoma", 1, 20)); // NOI18N
+        cbTipo.setForeground(new java.awt.Color(2, 52, 63));
+        cbTipo.setModel(new javax.swing.DefaultComboBoxModel<>(new String[] { "RECEITA", "DESPESA" }));
+        cbTipo.addActionListener(new java.awt.event.ActionListener() {
+            public void actionPerformed(java.awt.event.ActionEvent evt) {
+                cbTipoActionPerformed(evt);
             }
         });
 
-        jPanel4.setBackground(new java.awt.Color(2, 52, 63));
+        jLabel15.setFont(new java.awt.Font("Tahoma", 1, 18)); // NOI18N
+        jLabel15.setForeground(new java.awt.Color(240, 237, 204));
+        jLabel15.setText("Categoria:");
 
-        jLabel11.setFont(new java.awt.Font("Tahoma", 1, 24)); // NOI18N
+        cbCategoria.setBackground(new java.awt.Color(240, 237, 204));
+        cbCategoria.setFont(new java.awt.Font("Tahoma", 1, 14)); // NOI18N
+        cbCategoria.setForeground(new java.awt.Color(2, 52, 63));
+        cbCategoria.addActionListener(new java.awt.event.ActionListener() {
+            public void actionPerformed(java.awt.event.ActionEvent evt) {
+                cbCategoriaActionPerformed(evt);
+            }
+        });
+
+        jLabel16.setFont(new java.awt.Font("Tahoma", 1, 18)); // NOI18N
+        jLabel16.setForeground(new java.awt.Color(240, 237, 204));
+        jLabel16.setText("Descrição:");
+
+        txtDescricao.setBackground(new java.awt.Color(240, 237, 204));
+        txtDescricao.setFont(new java.awt.Font("Tahoma", 1, 12)); // NOI18N
+        txtDescricao.setForeground(new java.awt.Color(2, 52, 63));
+        txtDescricao.addActionListener(new java.awt.event.ActionListener() {
+            public void actionPerformed(java.awt.event.ActionEvent evt) {
+                txtDescricaoActionPerformed(evt);
+            }
+        });
+
+        jLabel17.setFont(new java.awt.Font("Tahoma", 1, 18)); // NOI18N
+        jLabel17.setForeground(new java.awt.Color(240, 237, 204));
+        jLabel17.setText("Valor:");
+
+        txtValor.setBackground(new java.awt.Color(240, 237, 204));
+        txtValor.setFont(new java.awt.Font("Tahoma", 1, 12)); // NOI18N
+        txtValor.setForeground(new java.awt.Color(2, 52, 63));
+        txtValor.addActionListener(new java.awt.event.ActionListener() {
+            public void actionPerformed(java.awt.event.ActionEvent evt) {
+                txtValorActionPerformed(evt);
+            }
+        });
+
+        jLabel18.setFont(new java.awt.Font("Tahoma", 1, 18)); // NOI18N
+        jLabel18.setForeground(new java.awt.Color(240, 237, 204));
+        jLabel18.setText("Data:");
+
+        txtData.setBackground(new java.awt.Color(240, 237, 204));
+        txtData.setFont(new java.awt.Font("Tahoma", 1, 12)); // NOI18N
+        txtData.setForeground(new java.awt.Color(2, 52, 63));
+        txtData.addActionListener(new java.awt.event.ActionListener() {
+            public void actionPerformed(java.awt.event.ActionEvent evt) {
+                txtDataActionPerformed(evt);
+            }
+        });
+
+        jLabel11.setFont(new java.awt.Font("Tahoma", 1, 20)); // NOI18N
         jLabel11.setForeground(new java.awt.Color(240, 237, 204));
         jLabel11.setText("Saldo Atual:");
 
-        lblSaldo.setFont(new java.awt.Font("Tahoma", 1, 24)); // NOI18N
+        lblSaldo.setFont(new java.awt.Font("Tahoma", 1, 20)); // NOI18N
         lblSaldo.setForeground(new java.awt.Color(240, 237, 204));
         lblSaldo.setText("R$ 0,00");
 
-        jLabel13.setFont(new java.awt.Font("Tahoma", 1, 20)); // NOI18N
+        jLabel13.setFont(new java.awt.Font("Tahoma", 1, 18)); // NOI18N
         jLabel13.setForeground(new java.awt.Color(0, 204, 0));
         jLabel13.setText("Total Receitas:");
 
-        lblTotalReceita.setFont(new java.awt.Font("Tahoma", 1, 20)); // NOI18N
+        lblTotalReceita.setFont(new java.awt.Font("Tahoma", 1, 18)); // NOI18N
         lblTotalReceita.setForeground(new java.awt.Color(0, 204, 0));
         lblTotalReceita.setText("R$ 0,00");
 
-        jLabel12.setFont(new java.awt.Font("Tahoma", 1, 20)); // NOI18N
+        jLabel12.setFont(new java.awt.Font("Tahoma", 1, 18)); // NOI18N
         jLabel12.setForeground(new java.awt.Color(255, 0, 0));
         jLabel12.setText("Total Despesas:");
 
-        lblTotalDespesa.setFont(new java.awt.Font("Tahoma", 1, 20)); // NOI18N
+        lblTotalDespesa.setFont(new java.awt.Font("Tahoma", 1, 18)); // NOI18N
         lblTotalDespesa.setForeground(new java.awt.Color(255, 0, 0));
         lblTotalDespesa.setText("R$ 0,00");
 
@@ -257,33 +325,86 @@ public class TelaPrincipal extends javax.swing.JFrame {
             .addGroup(javax.swing.GroupLayout.Alignment.TRAILING, jPanel5Layout.createSequentialGroup()
                 .addContainerGap(javax.swing.GroupLayout.DEFAULT_SIZE, Short.MAX_VALUE)
                 .addComponent(jLabel14)
-                .addGap(76, 76, 76))
+                .addGap(72, 72, 72))
         );
         jPanel5Layout.setVerticalGroup(
             jPanel5Layout.createParallelGroup(javax.swing.GroupLayout.Alignment.LEADING)
-            .addGroup(jPanel5Layout.createSequentialGroup()
-                .addGap(14, 14, 14)
-                .addComponent(jLabel14)
-                .addContainerGap(14, Short.MAX_VALUE))
+            .addComponent(jLabel14)
         );
 
-        btnIrReceitas.setBackground(new java.awt.Color(240, 237, 204));
-        btnIrReceitas.setFont(new java.awt.Font("Tahoma", 1, 14)); // NOI18N
-        btnIrReceitas.setForeground(new java.awt.Color(2, 52, 63));
-        btnIrReceitas.setText("Nova Receita");
-        btnIrReceitas.addActionListener(new java.awt.event.ActionListener() {
+        BtnSalvar.setBackground(new java.awt.Color(240, 237, 204));
+        BtnSalvar.setFont(new java.awt.Font("Tahoma", 1, 18)); // NOI18N
+        BtnSalvar.setForeground(new java.awt.Color(2, 52, 63));
+        BtnSalvar.setText("SALVAR");
+        BtnSalvar.addActionListener(new java.awt.event.ActionListener() {
             public void actionPerformed(java.awt.event.ActionEvent evt) {
-                btnIrReceitasActionPerformed(evt);
+                BtnSalvarActionPerformed(evt);
             }
         });
 
-        btnIrDespesas.setBackground(new java.awt.Color(240, 237, 204));
-        btnIrDespesas.setFont(new java.awt.Font("Tahoma", 1, 14)); // NOI18N
-        btnIrDespesas.setForeground(new java.awt.Color(2, 52, 63));
-        btnIrDespesas.setText("Nova Despesa");
-        btnIrDespesas.addActionListener(new java.awt.event.ActionListener() {
+        BtnExcluir.setBackground(new java.awt.Color(240, 237, 204));
+        BtnExcluir.setFont(new java.awt.Font("Tahoma", 1, 18)); // NOI18N
+        BtnExcluir.setForeground(new java.awt.Color(2, 52, 63));
+        BtnExcluir.setText("EXCLUIR");
+        BtnExcluir.addActionListener(new java.awt.event.ActionListener() {
             public void actionPerformed(java.awt.event.ActionEvent evt) {
-                btnIrDespesasActionPerformed(evt);
+                BtnExcluirActionPerformed(evt);
+            }
+        });
+
+        BtnLimpar.setBackground(new java.awt.Color(240, 237, 204));
+        BtnLimpar.setFont(new java.awt.Font("Tahoma", 1, 18)); // NOI18N
+        BtnLimpar.setForeground(new java.awt.Color(2, 52, 63));
+        BtnLimpar.setText("LIMPAR");
+        BtnLimpar.addActionListener(new java.awt.event.ActionListener() {
+            public void actionPerformed(java.awt.event.ActionEvent evt) {
+                BtnLimparActionPerformed(evt);
+            }
+        });
+
+        tabelaExtrato.setBackground(new java.awt.Color(240, 237, 204));
+        tabelaExtrato.setFont(new java.awt.Font("Tahoma", 1, 14)); // NOI18N
+        tabelaExtrato.setForeground(new java.awt.Color(2, 52, 63));
+        tabelaExtrato.setModel(new javax.swing.table.DefaultTableModel(
+            new Object [][] {
+                {null, null, null, null, null, null},
+                {null, null, null, null, null, null},
+                {null, null, null, null, null, null},
+                {null, null, null, null, null, null}
+            },
+            new String [] {
+                "ID", "Data", "Descrição", "Tipo", "Categoria", "Valor (R$)"
+            }
+        ) {
+            Class[] types = new Class [] {
+                java.lang.Integer.class, java.lang.Object.class, java.lang.Object.class, java.lang.Object.class, java.lang.Object.class, java.lang.Object.class
+            };
+            boolean[] canEdit = new boolean [] {
+                false, false, false, false, false, false
+            };
+
+            public Class getColumnClass(int columnIndex) {
+                return types [columnIndex];
+            }
+
+            public boolean isCellEditable(int rowIndex, int columnIndex) {
+                return canEdit [columnIndex];
+            }
+        });
+        tabelaExtrato.addMouseListener(new java.awt.event.MouseAdapter() {
+            public void mouseClicked(java.awt.event.MouseEvent evt) {
+                tabelaExtratoMouseClicked(evt);
+            }
+        });
+        jScrollPane1.setViewportView(tabelaExtrato);
+
+        BtnImprimir.setBackground(new java.awt.Color(240, 237, 204));
+        BtnImprimir.setFont(new java.awt.Font("Tahoma", 1, 14)); // NOI18N
+        BtnImprimir.setForeground(new java.awt.Color(2, 52, 47));
+        BtnImprimir.setText("IMPRIMIR");
+        BtnImprimir.addActionListener(new java.awt.event.ActionListener() {
+            public void actionPerformed(java.awt.event.ActionEvent evt) {
+                BtnImprimirActionPerformed(evt);
             }
         });
 
@@ -293,470 +414,117 @@ public class TelaPrincipal extends javax.swing.JFrame {
             jPanel4Layout.createParallelGroup(javax.swing.GroupLayout.Alignment.LEADING)
             .addComponent(jPanel5, javax.swing.GroupLayout.DEFAULT_SIZE, javax.swing.GroupLayout.DEFAULT_SIZE, Short.MAX_VALUE)
             .addGroup(jPanel4Layout.createSequentialGroup()
-                .addContainerGap()
-                .addComponent(jLabel13)
+                .addGap(117, 117, 117)
+                .addGroup(jPanel4Layout.createParallelGroup(javax.swing.GroupLayout.Alignment.TRAILING)
+                    .addComponent(jLabel15)
+                    .addComponent(jLabel18)
+                    .addComponent(jLabel16)
+                    .addComponent(jLabel17))
                 .addPreferredGap(javax.swing.LayoutStyle.ComponentPlacement.RELATED)
                 .addGroup(jPanel4Layout.createParallelGroup(javax.swing.GroupLayout.Alignment.LEADING)
-                    .addGroup(jPanel4Layout.createSequentialGroup()
-                        .addComponent(jLabel11)
-                        .addPreferredGap(javax.swing.LayoutStyle.ComponentPlacement.RELATED)
-                        .addComponent(lblSaldo)
-                        .addGap(0, 0, Short.MAX_VALUE))
-                    .addGroup(javax.swing.GroupLayout.Alignment.TRAILING, jPanel4Layout.createSequentialGroup()
-                        .addComponent(lblTotalReceita)
-                        .addPreferredGap(javax.swing.LayoutStyle.ComponentPlacement.RELATED, 75, Short.MAX_VALUE)
-                        .addComponent(jLabel12)
-                        .addPreferredGap(javax.swing.LayoutStyle.ComponentPlacement.RELATED)
-                        .addComponent(lblTotalDespesa)))
-                .addContainerGap())
+                    .addComponent(cbTipo, javax.swing.GroupLayout.PREFERRED_SIZE, javax.swing.GroupLayout.DEFAULT_SIZE, javax.swing.GroupLayout.PREFERRED_SIZE)
+                    .addGroup(jPanel4Layout.createParallelGroup(javax.swing.GroupLayout.Alignment.LEADING, false)
+                        .addComponent(txtData)
+                        .addComponent(txtValor)
+                        .addComponent(txtDescricao, javax.swing.GroupLayout.PREFERRED_SIZE, 222, javax.swing.GroupLayout.PREFERRED_SIZE)
+                        .addComponent(cbCategoria, javax.swing.GroupLayout.PREFERRED_SIZE, javax.swing.GroupLayout.DEFAULT_SIZE, javax.swing.GroupLayout.PREFERRED_SIZE)))
+                .addContainerGap(javax.swing.GroupLayout.DEFAULT_SIZE, Short.MAX_VALUE))
             .addGroup(jPanel4Layout.createSequentialGroup()
-                .addGap(52, 52, 52)
-                .addComponent(btnIrReceitas)
-                .addPreferredGap(javax.swing.LayoutStyle.ComponentPlacement.RELATED, javax.swing.GroupLayout.DEFAULT_SIZE, Short.MAX_VALUE)
-                .addComponent(btnIrDespesas)
-                .addGap(59, 59, 59))
+                .addGroup(jPanel4Layout.createParallelGroup(javax.swing.GroupLayout.Alignment.LEADING)
+                    .addGroup(jPanel4Layout.createSequentialGroup()
+                        .addContainerGap()
+                        .addComponent(jLabel13)
+                        .addPreferredGap(javax.swing.LayoutStyle.ComponentPlacement.RELATED)
+                        .addGroup(jPanel4Layout.createParallelGroup(javax.swing.GroupLayout.Alignment.LEADING)
+                            .addGroup(jPanel4Layout.createSequentialGroup()
+                                .addComponent(lblTotalReceita)
+                                .addPreferredGap(javax.swing.LayoutStyle.ComponentPlacement.RELATED, 127, Short.MAX_VALUE)
+                                .addComponent(jLabel12)
+                                .addPreferredGap(javax.swing.LayoutStyle.ComponentPlacement.RELATED)
+                                .addComponent(lblTotalDespesa))
+                            .addGroup(jPanel4Layout.createSequentialGroup()
+                                .addGap(24, 24, 24)
+                                .addComponent(jLabel11)
+                                .addPreferredGap(javax.swing.LayoutStyle.ComponentPlacement.RELATED)
+                                .addComponent(lblSaldo)
+                                .addGap(0, 0, Short.MAX_VALUE))))
+                    .addGroup(jPanel4Layout.createSequentialGroup()
+                        .addContainerGap()
+                        .addComponent(jScrollPane1)))
+                .addContainerGap())
+            .addGroup(javax.swing.GroupLayout.Alignment.TRAILING, jPanel4Layout.createSequentialGroup()
+                .addContainerGap(javax.swing.GroupLayout.DEFAULT_SIZE, Short.MAX_VALUE)
+                .addGroup(jPanel4Layout.createParallelGroup(javax.swing.GroupLayout.Alignment.LEADING)
+                    .addGroup(javax.swing.GroupLayout.Alignment.TRAILING, jPanel4Layout.createSequentialGroup()
+                        .addComponent(BtnSalvar)
+                        .addGap(18, 18, 18)
+                        .addComponent(BtnExcluir)
+                        .addGap(18, 18, 18)
+                        .addComponent(BtnLimpar)
+                        .addGap(105, 105, 105))
+                    .addGroup(javax.swing.GroupLayout.Alignment.TRAILING, jPanel4Layout.createSequentialGroup()
+                        .addComponent(BtnImprimir, javax.swing.GroupLayout.PREFERRED_SIZE, 129, javax.swing.GroupLayout.PREFERRED_SIZE)
+                        .addGap(14, 14, 14))))
         );
         jPanel4Layout.setVerticalGroup(
             jPanel4Layout.createParallelGroup(javax.swing.GroupLayout.Alignment.LEADING)
             .addGroup(jPanel4Layout.createSequentialGroup()
                 .addComponent(jPanel5, javax.swing.GroupLayout.PREFERRED_SIZE, javax.swing.GroupLayout.DEFAULT_SIZE, javax.swing.GroupLayout.PREFERRED_SIZE)
-                .addGap(18, 18, 18)
+                .addPreferredGap(javax.swing.LayoutStyle.ComponentPlacement.RELATED)
                 .addGroup(jPanel4Layout.createParallelGroup(javax.swing.GroupLayout.Alignment.BASELINE)
                     .addComponent(lblSaldo)
                     .addComponent(jLabel11))
-                .addGap(32, 32, 32)
+                .addPreferredGap(javax.swing.LayoutStyle.ComponentPlacement.UNRELATED)
                 .addGroup(jPanel4Layout.createParallelGroup(javax.swing.GroupLayout.Alignment.BASELINE)
                     .addComponent(jLabel12)
                     .addComponent(lblTotalDespesa)
                     .addComponent(jLabel13)
                     .addComponent(lblTotalReceita))
                 .addGap(18, 18, 18)
+                .addComponent(cbTipo, javax.swing.GroupLayout.PREFERRED_SIZE, javax.swing.GroupLayout.DEFAULT_SIZE, javax.swing.GroupLayout.PREFERRED_SIZE)
+                .addGap(18, 18, 18)
                 .addGroup(jPanel4Layout.createParallelGroup(javax.swing.GroupLayout.Alignment.BASELINE)
-                    .addComponent(btnIrReceitas)
-                    .addComponent(btnIrDespesas))
-                .addContainerGap(310, Short.MAX_VALUE))
-        );
-
-        jTabbedPane.addTab("INICIO", jPanel4);
-
-        jPanel2.setBackground(new java.awt.Color(2, 52, 63));
-
-        jLabel2.setFont(new java.awt.Font("Tahoma", 1, 18)); // NOI18N
-        jLabel2.setForeground(new java.awt.Color(240, 237, 204));
-        jLabel2.setText("Descrição:");
-
-        txtDescDespesa.setBackground(new java.awt.Color(240, 237, 204));
-        txtDescDespesa.setFont(new java.awt.Font("Tahoma", 1, 12)); // NOI18N
-        txtDescDespesa.setForeground(new java.awt.Color(2, 52, 63));
-
-        jLabel3.setFont(new java.awt.Font("Tahoma", 1, 18)); // NOI18N
-        jLabel3.setForeground(new java.awt.Color(240, 237, 204));
-        jLabel3.setText("Valor:");
-
-        txtValorDespesa.setBackground(new java.awt.Color(240, 237, 204));
-        txtValorDespesa.setFont(new java.awt.Font("Tahoma", 1, 12)); // NOI18N
-        txtValorDespesa.setForeground(new java.awt.Color(2, 52, 63));
-        txtValorDespesa.addActionListener(new java.awt.event.ActionListener() {
-            public void actionPerformed(java.awt.event.ActionEvent evt) {
-                txtValorDespesaActionPerformed(evt);
-            }
-        });
-
-        jLabel4.setFont(new java.awt.Font("Tahoma", 1, 18)); // NOI18N
-        jLabel4.setForeground(new java.awt.Color(240, 237, 204));
-        jLabel4.setText("Data:");
-
-        txtDataDespesa.setBackground(new java.awt.Color(240, 237, 204));
-        txtDataDespesa.setFont(new java.awt.Font("Tahoma", 1, 12)); // NOI18N
-        txtDataDespesa.setForeground(new java.awt.Color(2, 52, 63));
-        txtDataDespesa.addActionListener(new java.awt.event.ActionListener() {
-            public void actionPerformed(java.awt.event.ActionEvent evt) {
-                txtDataDespesaActionPerformed(evt);
-            }
-        });
-
-        jLabel5.setFont(new java.awt.Font("Tahoma", 1, 18)); // NOI18N
-        jLabel5.setForeground(new java.awt.Color(240, 237, 204));
-        jLabel5.setText("Categoria:");
-
-        cbCatDespesa.setBackground(new java.awt.Color(240, 237, 204));
-        cbCatDespesa.setFont(new java.awt.Font("Tahoma", 1, 14)); // NOI18N
-        cbCatDespesa.setForeground(new java.awt.Color(2, 52, 63));
-        cbCatDespesa.setModel(new javax.swing.DefaultComboBoxModel<>(new String[] { "CASA", "EDUCAÇÃO", "ELETRONICOS", "LAZER", "OUTROS", "TRANSPORTE", "MERCADO", "VESTUARIO", "SAUDE" }));
-        cbCatDespesa.addActionListener(new java.awt.event.ActionListener() {
-            public void actionPerformed(java.awt.event.ActionEvent evt) {
-                cbCatDespesaActionPerformed(evt);
-            }
-        });
-
-        btnSalvarDespesa.setBackground(new java.awt.Color(240, 237, 204));
-        btnSalvarDespesa.setFont(new java.awt.Font("Tahoma", 1, 14)); // NOI18N
-        btnSalvarDespesa.setForeground(new java.awt.Color(2, 52, 63));
-        btnSalvarDespesa.setText("SALVAR");
-        btnSalvarDespesa.addActionListener(new java.awt.event.ActionListener() {
-            public void actionPerformed(java.awt.event.ActionEvent evt) {
-                btnSalvarDespesaActionPerformed(evt);
-            }
-        });
-
-        btnExcluirDespesa.setBackground(new java.awt.Color(240, 237, 204));
-        btnExcluirDespesa.setFont(new java.awt.Font("Tahoma", 1, 14)); // NOI18N
-        btnExcluirDespesa.setForeground(new java.awt.Color(2, 52, 63));
-        btnExcluirDespesa.setText("EXCLUIR");
-        btnExcluirDespesa.addActionListener(new java.awt.event.ActionListener() {
-            public void actionPerformed(java.awt.event.ActionEvent evt) {
-                btnExcluirDespesaActionPerformed(evt);
-            }
-        });
-
-        btnLimparDespesa.setBackground(new java.awt.Color(240, 237, 204));
-        btnLimparDespesa.setFont(new java.awt.Font("Tahoma", 1, 14)); // NOI18N
-        btnLimparDespesa.setForeground(new java.awt.Color(2, 52, 63));
-        btnLimparDespesa.setText("LIMPAR");
-        btnLimparDespesa.addActionListener(new java.awt.event.ActionListener() {
-            public void actionPerformed(java.awt.event.ActionEvent evt) {
-                btnLimparDespesaActionPerformed(evt);
-            }
-        });
-
-        tabelaDespesas.setBackground(new java.awt.Color(240, 237, 204));
-        tabelaDespesas.setFont(new java.awt.Font("Tahoma", 1, 12)); // NOI18N
-        tabelaDespesas.setForeground(new java.awt.Color(2, 52, 63));
-        tabelaDespesas.setModel(new javax.swing.table.DefaultTableModel(
-            new Object [][] {
-                {null, null, null, null, null},
-                {null, null, null, null, null},
-                {null, null, null, null, null},
-                {null, null, null, null, null}
-            },
-            new String [] {
-                "ID", "Data", "Descrição", "Categoria", "Valor (R$)"
-            }
-        ) {
-            Class[] types = new Class [] {
-                java.lang.Integer.class, java.lang.Object.class, java.lang.String.class, java.lang.String.class, java.lang.Object.class
-            };
-            boolean[] canEdit = new boolean [] {
-                false, false, false, false, false
-            };
-
-            public Class getColumnClass(int columnIndex) {
-                return types [columnIndex];
-            }
-
-            public boolean isCellEditable(int rowIndex, int columnIndex) {
-                return canEdit [columnIndex];
-            }
-        });
-        tabelaDespesas.addMouseListener(new java.awt.event.MouseAdapter() {
-            public void mouseClicked(java.awt.event.MouseEvent evt) {
-                tabelaDespesasMouseClicked(evt);
-            }
-        });
-        jScrollPane1.setViewportView(tabelaDespesas);
-
-        jPanel7.setBackground(new java.awt.Color(240, 237, 204));
-        jPanel7.setBorder(javax.swing.BorderFactory.createLineBorder(new java.awt.Color(2, 52, 63), 3));
-        jPanel7.setPreferredSize(new java.awt.Dimension(331, 59));
-
-        jLabel1.setFont(new java.awt.Font("Cambria", 1, 24)); // NOI18N
-        jLabel1.setForeground(new java.awt.Color(2, 52, 63));
-        jLabel1.setText("DESPESAS");
-
-        javax.swing.GroupLayout jPanel7Layout = new javax.swing.GroupLayout(jPanel7);
-        jPanel7.setLayout(jPanel7Layout);
-        jPanel7Layout.setHorizontalGroup(
-            jPanel7Layout.createParallelGroup(javax.swing.GroupLayout.Alignment.LEADING)
-            .addGroup(jPanel7Layout.createSequentialGroup()
-                .addGap(219, 219, 219)
-                .addComponent(jLabel1)
+                    .addComponent(txtValor, javax.swing.GroupLayout.PREFERRED_SIZE, javax.swing.GroupLayout.DEFAULT_SIZE, javax.swing.GroupLayout.PREFERRED_SIZE)
+                    .addComponent(jLabel17))
+                .addPreferredGap(javax.swing.LayoutStyle.ComponentPlacement.RELATED)
+                .addGroup(jPanel4Layout.createParallelGroup(javax.swing.GroupLayout.Alignment.BASELINE)
+                    .addComponent(txtDescricao, javax.swing.GroupLayout.PREFERRED_SIZE, javax.swing.GroupLayout.DEFAULT_SIZE, javax.swing.GroupLayout.PREFERRED_SIZE)
+                    .addComponent(jLabel16))
+                .addPreferredGap(javax.swing.LayoutStyle.ComponentPlacement.RELATED)
+                .addGroup(jPanel4Layout.createParallelGroup(javax.swing.GroupLayout.Alignment.BASELINE)
+                    .addComponent(jLabel18)
+                    .addComponent(txtData, javax.swing.GroupLayout.PREFERRED_SIZE, javax.swing.GroupLayout.DEFAULT_SIZE, javax.swing.GroupLayout.PREFERRED_SIZE))
+                .addPreferredGap(javax.swing.LayoutStyle.ComponentPlacement.RELATED)
+                .addGroup(jPanel4Layout.createParallelGroup(javax.swing.GroupLayout.Alignment.BASELINE)
+                    .addComponent(cbCategoria, javax.swing.GroupLayout.PREFERRED_SIZE, javax.swing.GroupLayout.DEFAULT_SIZE, javax.swing.GroupLayout.PREFERRED_SIZE)
+                    .addComponent(jLabel15))
+                .addGap(18, 18, 18)
+                .addGroup(jPanel4Layout.createParallelGroup(javax.swing.GroupLayout.Alignment.BASELINE)
+                    .addComponent(BtnSalvar)
+                    .addComponent(BtnExcluir)
+                    .addComponent(BtnLimpar))
+                .addPreferredGap(javax.swing.LayoutStyle.ComponentPlacement.UNRELATED)
+                .addComponent(jScrollPane1, javax.swing.GroupLayout.PREFERRED_SIZE, 300, javax.swing.GroupLayout.PREFERRED_SIZE)
+                .addPreferredGap(javax.swing.LayoutStyle.ComponentPlacement.RELATED)
+                .addComponent(BtnImprimir)
                 .addContainerGap(javax.swing.GroupLayout.DEFAULT_SIZE, Short.MAX_VALUE))
         );
-        jPanel7Layout.setVerticalGroup(
-            jPanel7Layout.createParallelGroup(javax.swing.GroupLayout.Alignment.LEADING)
-            .addGroup(javax.swing.GroupLayout.Alignment.TRAILING, jPanel7Layout.createSequentialGroup()
-                .addContainerGap(15, Short.MAX_VALUE)
-                .addComponent(jLabel1, javax.swing.GroupLayout.PREFERRED_SIZE, 24, javax.swing.GroupLayout.PREFERRED_SIZE)
-                .addGap(14, 14, 14))
-        );
-
-        javax.swing.GroupLayout jPanel2Layout = new javax.swing.GroupLayout(jPanel2);
-        jPanel2.setLayout(jPanel2Layout);
-        jPanel2Layout.setHorizontalGroup(
-            jPanel2Layout.createParallelGroup(javax.swing.GroupLayout.Alignment.LEADING)
-            .addComponent(jPanel7, javax.swing.GroupLayout.DEFAULT_SIZE, 563, Short.MAX_VALUE)
-            .addGroup(javax.swing.GroupLayout.Alignment.TRAILING, jPanel2Layout.createSequentialGroup()
-                .addContainerGap(57, Short.MAX_VALUE)
-                .addGroup(jPanel2Layout.createParallelGroup(javax.swing.GroupLayout.Alignment.LEADING)
-                    .addGroup(jPanel2Layout.createSequentialGroup()
-                        .addGap(52, 52, 52)
-                        .addGroup(jPanel2Layout.createParallelGroup(javax.swing.GroupLayout.Alignment.LEADING)
-                            .addGroup(javax.swing.GroupLayout.Alignment.TRAILING, jPanel2Layout.createSequentialGroup()
-                                .addGroup(jPanel2Layout.createParallelGroup(javax.swing.GroupLayout.Alignment.TRAILING)
-                                    .addComponent(jLabel5)
-                                    .addComponent(jLabel4)
-                                    .addComponent(jLabel2)
-                                    .addComponent(jLabel3))
-                                .addPreferredGap(javax.swing.LayoutStyle.ComponentPlacement.RELATED)
-                                .addGroup(jPanel2Layout.createParallelGroup(javax.swing.GroupLayout.Alignment.LEADING, false)
-                                    .addComponent(txtDataDespesa, javax.swing.GroupLayout.DEFAULT_SIZE, 222, Short.MAX_VALUE)
-                                    .addComponent(txtValorDespesa)
-                                    .addComponent(txtDescDespesa)
-                                    .addComponent(cbCatDespesa, javax.swing.GroupLayout.PREFERRED_SIZE, javax.swing.GroupLayout.DEFAULT_SIZE, javax.swing.GroupLayout.PREFERRED_SIZE))
-                                .addGap(18, 18, 18))
-                            .addGroup(javax.swing.GroupLayout.Alignment.TRAILING, jPanel2Layout.createSequentialGroup()
-                                .addComponent(btnSalvarDespesa)
-                                .addPreferredGap(javax.swing.LayoutStyle.ComponentPlacement.UNRELATED)
-                                .addComponent(btnExcluirDespesa)
-                                .addPreferredGap(javax.swing.LayoutStyle.ComponentPlacement.UNRELATED)
-                                .addComponent(btnLimparDespesa))))
-                    .addComponent(jScrollPane1, javax.swing.GroupLayout.PREFERRED_SIZE, javax.swing.GroupLayout.DEFAULT_SIZE, javax.swing.GroupLayout.PREFERRED_SIZE))
-                .addGap(54, 54, 54))
-        );
-        jPanel2Layout.setVerticalGroup(
-            jPanel2Layout.createParallelGroup(javax.swing.GroupLayout.Alignment.LEADING)
-            .addGroup(jPanel2Layout.createSequentialGroup()
-                .addComponent(jPanel7, javax.swing.GroupLayout.PREFERRED_SIZE, javax.swing.GroupLayout.DEFAULT_SIZE, javax.swing.GroupLayout.PREFERRED_SIZE)
-                .addPreferredGap(javax.swing.LayoutStyle.ComponentPlacement.RELATED)
-                .addGroup(jPanel2Layout.createParallelGroup(javax.swing.GroupLayout.Alignment.BASELINE)
-                    .addComponent(txtValorDespesa, javax.swing.GroupLayout.PREFERRED_SIZE, javax.swing.GroupLayout.DEFAULT_SIZE, javax.swing.GroupLayout.PREFERRED_SIZE)
-                    .addComponent(jLabel3))
-                .addPreferredGap(javax.swing.LayoutStyle.ComponentPlacement.RELATED)
-                .addGroup(jPanel2Layout.createParallelGroup(javax.swing.GroupLayout.Alignment.BASELINE)
-                    .addComponent(txtDescDespesa, javax.swing.GroupLayout.PREFERRED_SIZE, javax.swing.GroupLayout.DEFAULT_SIZE, javax.swing.GroupLayout.PREFERRED_SIZE)
-                    .addComponent(jLabel2))
-                .addPreferredGap(javax.swing.LayoutStyle.ComponentPlacement.RELATED)
-                .addGroup(jPanel2Layout.createParallelGroup(javax.swing.GroupLayout.Alignment.BASELINE)
-                    .addComponent(jLabel4)
-                    .addComponent(txtDataDespesa, javax.swing.GroupLayout.PREFERRED_SIZE, javax.swing.GroupLayout.DEFAULT_SIZE, javax.swing.GroupLayout.PREFERRED_SIZE))
-                .addPreferredGap(javax.swing.LayoutStyle.ComponentPlacement.RELATED)
-                .addGroup(jPanel2Layout.createParallelGroup(javax.swing.GroupLayout.Alignment.BASELINE)
-                    .addComponent(cbCatDespesa, javax.swing.GroupLayout.PREFERRED_SIZE, javax.swing.GroupLayout.DEFAULT_SIZE, javax.swing.GroupLayout.PREFERRED_SIZE)
-                    .addComponent(jLabel5))
-                .addPreferredGap(javax.swing.LayoutStyle.ComponentPlacement.UNRELATED)
-                .addGroup(jPanel2Layout.createParallelGroup(javax.swing.GroupLayout.Alignment.BASELINE)
-                    .addComponent(btnSalvarDespesa)
-                    .addComponent(btnExcluirDespesa)
-                    .addComponent(btnLimparDespesa))
-                .addGap(18, 18, 18)
-                .addComponent(jScrollPane1, javax.swing.GroupLayout.PREFERRED_SIZE, 287, javax.swing.GroupLayout.PREFERRED_SIZE)
-                .addContainerGap(13, Short.MAX_VALUE))
-        );
-
-        jTabbedPane.addTab("DESPESAS", jPanel2);
-
-        jPanel3.setBackground(new java.awt.Color(240, 237, 204));
-
-        jLabel7.setFont(new java.awt.Font("Tahoma", 1, 18)); // NOI18N
-        jLabel7.setForeground(new java.awt.Color(2, 52, 63));
-        jLabel7.setText("Descrição:");
-
-        txtDescReceita.setBackground(new java.awt.Color(2, 52, 63));
-        txtDescReceita.setFont(new java.awt.Font("Tahoma", 1, 12)); // NOI18N
-        txtDescReceita.setForeground(new java.awt.Color(240, 237, 204));
-
-        jLabel8.setFont(new java.awt.Font("Tahoma", 1, 18)); // NOI18N
-        jLabel8.setForeground(new java.awt.Color(2, 52, 63));
-        jLabel8.setText("Valor:");
-
-        txtValorReceita.setBackground(new java.awt.Color(2, 52, 63));
-        txtValorReceita.setFont(new java.awt.Font("Tahoma", 1, 12)); // NOI18N
-        txtValorReceita.setForeground(new java.awt.Color(240, 237, 204));
-        txtValorReceita.addActionListener(new java.awt.event.ActionListener() {
-            public void actionPerformed(java.awt.event.ActionEvent evt) {
-                txtValorReceitaActionPerformed(evt);
-            }
-        });
-
-        jLabel9.setFont(new java.awt.Font("Tahoma", 1, 18)); // NOI18N
-        jLabel9.setForeground(new java.awt.Color(2, 52, 63));
-        jLabel9.setText("Data:");
-
-        txtDataReceita.setBackground(new java.awt.Color(2, 52, 63));
-        txtDataReceita.setFont(new java.awt.Font("Tahoma", 1, 12)); // NOI18N
-        txtDataReceita.setForeground(new java.awt.Color(240, 237, 204));
-
-        jLabel10.setFont(new java.awt.Font("Tahoma", 1, 18)); // NOI18N
-        jLabel10.setForeground(new java.awt.Color(2, 52, 63));
-        jLabel10.setText("Categoria:");
-
-        cbCatReceita.setBackground(new java.awt.Color(2, 52, 63));
-        cbCatReceita.setFont(new java.awt.Font("Tahoma", 1, 14)); // NOI18N
-        cbCatReceita.setForeground(new java.awt.Color(240, 237, 204));
-        cbCatReceita.setModel(new javax.swing.DefaultComboBoxModel<>(new String[] { "INVESTIMENTOS", "OUTROS", "PRESENTE", "PRÊMIOS", "SALÁRIO" }));
-        cbCatReceita.addActionListener(new java.awt.event.ActionListener() {
-            public void actionPerformed(java.awt.event.ActionEvent evt) {
-                cbCatReceitaActionPerformed(evt);
-            }
-        });
-
-        btnSalvarReceita.setBackground(new java.awt.Color(2, 52, 63));
-        btnSalvarReceita.setFont(new java.awt.Font("Tahoma", 1, 14)); // NOI18N
-        btnSalvarReceita.setForeground(new java.awt.Color(240, 237, 204));
-        btnSalvarReceita.setText("SALVAR");
-        btnSalvarReceita.addActionListener(new java.awt.event.ActionListener() {
-            public void actionPerformed(java.awt.event.ActionEvent evt) {
-                btnSalvarReceitaActionPerformed(evt);
-            }
-        });
-
-        btnExcluirReceita.setBackground(new java.awt.Color(2, 52, 63));
-        btnExcluirReceita.setFont(new java.awt.Font("Tahoma", 1, 14)); // NOI18N
-        btnExcluirReceita.setForeground(new java.awt.Color(240, 237, 204));
-        btnExcluirReceita.setText("EXCLUIR");
-        btnExcluirReceita.addActionListener(new java.awt.event.ActionListener() {
-            public void actionPerformed(java.awt.event.ActionEvent evt) {
-                btnExcluirReceitaActionPerformed(evt);
-            }
-        });
-
-        btnLimparReceita.setBackground(new java.awt.Color(2, 52, 63));
-        btnLimparReceita.setFont(new java.awt.Font("Tahoma", 1, 14)); // NOI18N
-        btnLimparReceita.setForeground(new java.awt.Color(240, 237, 204));
-        btnLimparReceita.setText("LIMPAR");
-        btnLimparReceita.addActionListener(new java.awt.event.ActionListener() {
-            public void actionPerformed(java.awt.event.ActionEvent evt) {
-                btnLimparReceitaActionPerformed(evt);
-            }
-        });
-
-        tabelaReceita.setBackground(new java.awt.Color(2, 52, 63));
-        tabelaReceita.setFont(new java.awt.Font("Tahoma", 1, 12)); // NOI18N
-        tabelaReceita.setForeground(new java.awt.Color(240, 237, 204));
-        tabelaReceita.setModel(new javax.swing.table.DefaultTableModel(
-            new Object [][] {
-                {null, null, null, null, null},
-                {null, null, null, null, null},
-                {null, null, null, null, null},
-                {null, null, null, null, null}
-            },
-            new String [] {
-                "ID", "Data", "Descrição", "categoria", "Valor (R$)"
-            }
-        ) {
-            Class[] types = new Class [] {
-                java.lang.Integer.class, java.lang.Object.class, java.lang.String.class, java.lang.String.class, java.lang.Object.class
-            };
-            boolean[] canEdit = new boolean [] {
-                false, false, false, false, false
-            };
-
-            public Class getColumnClass(int columnIndex) {
-                return types [columnIndex];
-            }
-
-            public boolean isCellEditable(int rowIndex, int columnIndex) {
-                return canEdit [columnIndex];
-            }
-        });
-        tabelaReceita.addMouseListener(new java.awt.event.MouseAdapter() {
-            public void mouseClicked(java.awt.event.MouseEvent evt) {
-                tabelaReceitaMouseClicked(evt);
-            }
-        });
-        jScrollPane2.setViewportView(tabelaReceita);
-
-        jPanel6.setBackground(new java.awt.Color(2, 52, 63));
-        jPanel6.setBorder(javax.swing.BorderFactory.createLineBorder(new java.awt.Color(240, 237, 204), 3));
-        jPanel6.setForeground(new java.awt.Color(240, 237, 204));
-
-        jLabel6.setFont(new java.awt.Font("Cambria", 1, 24)); // NOI18N
-        jLabel6.setForeground(new java.awt.Color(240, 237, 204));
-        jLabel6.setText("RECEITAS");
-
-        javax.swing.GroupLayout jPanel6Layout = new javax.swing.GroupLayout(jPanel6);
-        jPanel6.setLayout(jPanel6Layout);
-        jPanel6Layout.setHorizontalGroup(
-            jPanel6Layout.createParallelGroup(javax.swing.GroupLayout.Alignment.LEADING)
-            .addGroup(javax.swing.GroupLayout.Alignment.TRAILING, jPanel6Layout.createSequentialGroup()
-                .addContainerGap(javax.swing.GroupLayout.DEFAULT_SIZE, Short.MAX_VALUE)
-                .addComponent(jLabel6)
-                .addGap(227, 227, 227))
-        );
-        jPanel6Layout.setVerticalGroup(
-            jPanel6Layout.createParallelGroup(javax.swing.GroupLayout.Alignment.LEADING)
-            .addGroup(jPanel6Layout.createSequentialGroup()
-                .addGap(14, 14, 14)
-                .addComponent(jLabel6, javax.swing.GroupLayout.PREFERRED_SIZE, 24, javax.swing.GroupLayout.PREFERRED_SIZE)
-                .addContainerGap(15, Short.MAX_VALUE))
-        );
-
-        javax.swing.GroupLayout jPanel3Layout = new javax.swing.GroupLayout(jPanel3);
-        jPanel3.setLayout(jPanel3Layout);
-        jPanel3Layout.setHorizontalGroup(
-            jPanel3Layout.createParallelGroup(javax.swing.GroupLayout.Alignment.LEADING)
-            .addComponent(jPanel6, javax.swing.GroupLayout.DEFAULT_SIZE, javax.swing.GroupLayout.DEFAULT_SIZE, Short.MAX_VALUE)
-            .addGroup(jPanel3Layout.createSequentialGroup()
-                .addGap(118, 118, 118)
-                .addGroup(jPanel3Layout.createParallelGroup(javax.swing.GroupLayout.Alignment.TRAILING)
-                    .addComponent(jLabel7)
-                    .addComponent(jLabel8)
-                    .addComponent(jLabel9)
-                    .addComponent(jLabel10))
-                .addPreferredGap(javax.swing.LayoutStyle.ComponentPlacement.RELATED)
-                .addGroup(jPanel3Layout.createParallelGroup(javax.swing.GroupLayout.Alignment.LEADING, false)
-                    .addComponent(cbCatReceita, javax.swing.GroupLayout.PREFERRED_SIZE, javax.swing.GroupLayout.DEFAULT_SIZE, javax.swing.GroupLayout.PREFERRED_SIZE)
-                    .addComponent(txtDescReceita)
-                    .addComponent(txtValorReceita)
-                    .addComponent(txtDataReceita, javax.swing.GroupLayout.PREFERRED_SIZE, 222, javax.swing.GroupLayout.PREFERRED_SIZE))
-                .addGap(0, 0, Short.MAX_VALUE))
-            .addGroup(javax.swing.GroupLayout.Alignment.TRAILING, jPanel3Layout.createSequentialGroup()
-                .addContainerGap(52, Short.MAX_VALUE)
-                .addGroup(jPanel3Layout.createParallelGroup(javax.swing.GroupLayout.Alignment.LEADING)
-                    .addGroup(javax.swing.GroupLayout.Alignment.TRAILING, jPanel3Layout.createSequentialGroup()
-                        .addComponent(jScrollPane2, javax.swing.GroupLayout.PREFERRED_SIZE, javax.swing.GroupLayout.DEFAULT_SIZE, javax.swing.GroupLayout.PREFERRED_SIZE)
-                        .addGap(59, 59, 59))
-                    .addGroup(javax.swing.GroupLayout.Alignment.TRAILING, jPanel3Layout.createSequentialGroup()
-                        .addComponent(btnSalvarReceita)
-                        .addGap(18, 18, 18)
-                        .addComponent(btnExcluirReceita)
-                        .addGap(18, 18, 18)
-                        .addComponent(btnLimparReceita)
-                        .addGap(113, 113, 113))))
-        );
-        jPanel3Layout.setVerticalGroup(
-            jPanel3Layout.createParallelGroup(javax.swing.GroupLayout.Alignment.LEADING)
-            .addGroup(javax.swing.GroupLayout.Alignment.TRAILING, jPanel3Layout.createSequentialGroup()
-                .addComponent(jPanel6, javax.swing.GroupLayout.PREFERRED_SIZE, javax.swing.GroupLayout.DEFAULT_SIZE, javax.swing.GroupLayout.PREFERRED_SIZE)
-                .addPreferredGap(javax.swing.LayoutStyle.ComponentPlacement.RELATED)
-                .addGroup(jPanel3Layout.createParallelGroup(javax.swing.GroupLayout.Alignment.LEADING)
-                    .addComponent(txtValorReceita, javax.swing.GroupLayout.PREFERRED_SIZE, javax.swing.GroupLayout.DEFAULT_SIZE, javax.swing.GroupLayout.PREFERRED_SIZE)
-                    .addComponent(jLabel8, javax.swing.GroupLayout.Alignment.TRAILING))
-                .addPreferredGap(javax.swing.LayoutStyle.ComponentPlacement.RELATED)
-                .addGroup(jPanel3Layout.createParallelGroup(javax.swing.GroupLayout.Alignment.BASELINE)
-                    .addComponent(jLabel7)
-                    .addComponent(txtDescReceita, javax.swing.GroupLayout.PREFERRED_SIZE, javax.swing.GroupLayout.DEFAULT_SIZE, javax.swing.GroupLayout.PREFERRED_SIZE))
-                .addPreferredGap(javax.swing.LayoutStyle.ComponentPlacement.RELATED)
-                .addGroup(jPanel3Layout.createParallelGroup(javax.swing.GroupLayout.Alignment.BASELINE)
-                    .addComponent(jLabel9)
-                    .addComponent(txtDataReceita, javax.swing.GroupLayout.PREFERRED_SIZE, javax.swing.GroupLayout.DEFAULT_SIZE, javax.swing.GroupLayout.PREFERRED_SIZE))
-                .addPreferredGap(javax.swing.LayoutStyle.ComponentPlacement.RELATED)
-                .addGroup(jPanel3Layout.createParallelGroup(javax.swing.GroupLayout.Alignment.BASELINE)
-                    .addComponent(jLabel10)
-                    .addComponent(cbCatReceita, javax.swing.GroupLayout.PREFERRED_SIZE, javax.swing.GroupLayout.DEFAULT_SIZE, javax.swing.GroupLayout.PREFERRED_SIZE))
-                .addGap(18, 18, 18)
-                .addGroup(jPanel3Layout.createParallelGroup(javax.swing.GroupLayout.Alignment.BASELINE)
-                    .addComponent(btnSalvarReceita)
-                    .addComponent(btnExcluirReceita)
-                    .addComponent(btnLimparReceita))
-                .addGap(18, 18, 18)
-                .addComponent(jScrollPane2, javax.swing.GroupLayout.PREFERRED_SIZE, 287, javax.swing.GroupLayout.PREFERRED_SIZE)
-                .addContainerGap(9, Short.MAX_VALUE))
-        );
-
-        jTabbedPane.addTab("RECEITAS", jPanel3);
 
         javax.swing.GroupLayout jPanel1Layout = new javax.swing.GroupLayout(jPanel1);
         jPanel1.setLayout(jPanel1Layout);
         jPanel1Layout.setHorizontalGroup(
             jPanel1Layout.createParallelGroup(javax.swing.GroupLayout.Alignment.LEADING)
             .addGroup(jPanel1Layout.createSequentialGroup()
-                .addComponent(jTabbedPane)
-                .addGap(0, 0, Short.MAX_VALUE))
+                .addGap(0, 0, Short.MAX_VALUE)
+                .addComponent(jPanel4, javax.swing.GroupLayout.PREFERRED_SIZE, javax.swing.GroupLayout.DEFAULT_SIZE, javax.swing.GroupLayout.PREFERRED_SIZE)
+                .addGap(0, 2, Short.MAX_VALUE))
         );
         jPanel1Layout.setVerticalGroup(
             jPanel1Layout.createParallelGroup(javax.swing.GroupLayout.Alignment.LEADING)
-            .addComponent(jTabbedPane)
+            .addGroup(jPanel1Layout.createSequentialGroup()
+                .addGap(0, 0, Short.MAX_VALUE)
+                .addComponent(jPanel4, javax.swing.GroupLayout.PREFERRED_SIZE, javax.swing.GroupLayout.DEFAULT_SIZE, javax.swing.GroupLayout.PREFERRED_SIZE)
+                .addGap(0, 37, Short.MAX_VALUE))
         );
 
         getContentPane().add(jPanel1, new java.awt.GridBagConstraints());
@@ -764,166 +532,108 @@ public class TelaPrincipal extends javax.swing.JFrame {
         pack();
     }// </editor-fold>//GEN-END:initComponents
 
-    private void txtValorDespesaActionPerformed(java.awt.event.ActionEvent evt) {//GEN-FIRST:event_txtValorDespesaActionPerformed
+    private void cbCategoriaActionPerformed(java.awt.event.ActionEvent evt) {//GEN-FIRST:event_cbCategoriaActionPerformed
         // TODO add your handling code here:
-    }//GEN-LAST:event_txtValorDespesaActionPerformed
+    }//GEN-LAST:event_cbCategoriaActionPerformed
 
-    private void cbCatDespesaActionPerformed(java.awt.event.ActionEvent evt) {//GEN-FIRST:event_cbCatDespesaActionPerformed
+    private void txtValorActionPerformed(java.awt.event.ActionEvent evt) {//GEN-FIRST:event_txtValorActionPerformed
         // TODO add your handling code here:
-    }//GEN-LAST:event_cbCatDespesaActionPerformed
+    }//GEN-LAST:event_txtValorActionPerformed
 
-    private void txtValorReceitaActionPerformed(java.awt.event.ActionEvent evt) {//GEN-FIRST:event_txtValorReceitaActionPerformed
+    private void txtDataActionPerformed(java.awt.event.ActionEvent evt) {//GEN-FIRST:event_txtDataActionPerformed
         // TODO add your handling code here:
-    }//GEN-LAST:event_txtValorReceitaActionPerformed
+    }//GEN-LAST:event_txtDataActionPerformed
 
-    private void cbCatReceitaActionPerformed(java.awt.event.ActionEvent evt) {//GEN-FIRST:event_cbCatReceitaActionPerformed
+    private void txtDescricaoActionPerformed(java.awt.event.ActionEvent evt) {//GEN-FIRST:event_txtDescricaoActionPerformed
         // TODO add your handling code here:
-    }//GEN-LAST:event_cbCatReceitaActionPerformed
+    }//GEN-LAST:event_txtDescricaoActionPerformed
 
-    private void btnSalvarDespesaActionPerformed(java.awt.event.ActionEvent evt) {//GEN-FIRST:event_btnSalvarDespesaActionPerformed
+    private void BtnSalvarActionPerformed(java.awt.event.ActionEvent evt) {//GEN-FIRST:event_BtnSalvarActionPerformed
         try {
-        Lancamento l = new Lancamento();
-        l.setDescricao(txtDescDespesa.getText());
-        l.setCategoria(cbCatDespesa.getSelectedItem().toString());
-        l.setTipo("DESPESA");
+            Lancamento l = new Lancamento();
+            l.setDescricao(txtDescricao.getText());
+            l.setTipo(cbTipo.getSelectedItem().toString());
+            l.setCategoria(cbCategoria.getSelectedItem().toString());
 
-        String valorTexto = txtValorDespesa.getText();
-        valorTexto = valorTexto.replace("R$", "").replace(" ", "").replace(".", "");
-        valorTexto = valorTexto.replace(",", ".");
-        l.setValor(Double.parseDouble(valorTexto));
+            // Tratamento de Valor 
+            String valorLimpo = txtValor.getText().replaceAll("[^0-9,]", "").replace(",", ".");
+            l.setValor(Double.parseDouble(valorLimpo));
 
-        java.time.format.DateTimeFormatter formatador = java.time.format.DateTimeFormatter.ofPattern("dd/MM/yyyy");
-        l.setData(LocalDate.parse(txtDataDespesa.getText(), formatador));
+            // Tratamento de Data
+            DateTimeFormatter fmt = DateTimeFormatter.ofPattern("dd/MM/yyyy");
+            l.setData(LocalDate.parse(txtData.getText(), fmt));
 
-        if (idEmEdicaoDespesa == 0) {
-            dao.salvar(l);
-            JOptionPane.showMessageDialog(this, "Despesa Salva!");
-        } else {
-            l.setId(idEmEdicaoDespesa);
-            dao.atualizar(l);
-            JOptionPane.showMessageDialog(this, "Despesa Atualizada!");
-            idEmEdicaoDespesa = 0;
+            l.setUsuarioId(com.controlfinanc.model.Sessao.usuarioLogado.getId());
+
+            LancamentoDAO dao = new LancamentoDAO();
+
+            if (idEmEdicao == 0) {
+                dao.salvar(l);
+                JOptionPane.showMessageDialog(this, "Lançamento Salvo!");
+            } else {
+                l.setId(idEmEdicao);
+                dao.atualizar(l);
+                JOptionPane.showMessageDialog(this, "Lançamento Atualizado!");
+            }
+
+            atualizarTabelaGeral();
+            atualizarDashboard();
+            limparCampos();
+
+        } catch (Exception e) {
+            JOptionPane.showMessageDialog(this, "Erro: Verifique valor e data (dd/mm/aaaa). \n" + e.getMessage());
         }
+    }//GEN-LAST:event_BtnSalvarActionPerformed
 
-        atualizarTabelaDespesas();
-        atualizarDashboard(); 
-        limparCamposDespesa();
+    private void BtnExcluirActionPerformed(java.awt.event.ActionEvent evt) {//GEN-FIRST:event_BtnExcluirActionPerformed
+        if (tabelaExtrato.getSelectedRow() != -1) {
+            int confirm = JOptionPane.showConfirmDialog(this, "Tem certeza?", "Excluir", JOptionPane.YES_NO_OPTION);
 
-    } catch (Exception e) {
-        e.printStackTrace(); 
-        JOptionPane.showMessageDialog(this, "Erro: Verifique se a data está dia/mês/ano (ex: 02/12/2025) e o valor está correto.");
-    }
-    }//GEN-LAST:event_btnSalvarDespesaActionPerformed
+            if (confirm == JOptionPane.YES_OPTION) {
+                int idLancamento = (int) tabelaExtrato.getValueAt(tabelaExtrato.getSelectedRow(), 0);
+                int idUsuario = com.controlfinanc.model.Sessao.usuarioLogado.getId();
+                new LancamentoDAO().excluir(idLancamento, idUsuario);
 
-    private void btnExcluirDespesaActionPerformed(java.awt.event.ActionEvent evt) {//GEN-FIRST:event_btnExcluirDespesaActionPerformed
-       if (tabelaDespesas.getSelectedRow() != -1) {
-            int id = (int) tabelaDespesas.getValueAt(tabelaDespesas.getSelectedRow(), 0);
-            
-            int confirm = JOptionPane.showConfirmDialog(this, "Tem certeza que deseja excluir?", "Atenção", JOptionPane.YES_NO_OPTION);
-            if(confirm == JOptionPane.YES_OPTION){
-                dao.excluir(id);
-                atualizarTabelaDespesas();
-                limparCamposDespesa();
+                atualizarTabelaGeral();
+                atualizarDashboard();
+                limparCampos();
             }
         } else {
             JOptionPane.showMessageDialog(this, "Selecione uma linha para excluir.");
         }
-    }//GEN-LAST:event_btnExcluirDespesaActionPerformed
+    }//GEN-LAST:event_BtnExcluirActionPerformed
 
-    private void tabelaDespesasMouseClicked(java.awt.event.MouseEvent evt) {//GEN-FIRST:event_tabelaDespesasMouseClicked
-        if (tabelaDespesas.getSelectedRow() != -1) {
-            idEmEdicaoDespesa = (int) tabelaDespesas.getValueAt(tabelaDespesas.getSelectedRow(), 0);
-            txtDataDespesa.setText(tabelaDespesas.getValueAt(tabelaDespesas.getSelectedRow(), 1).toString());
-            txtDescDespesa.setText(tabelaDespesas.getValueAt(tabelaDespesas.getSelectedRow(), 2).toString());
-            cbCatDespesa.setSelectedItem(tabelaDespesas.getValueAt(tabelaDespesas.getSelectedRow(), 3).toString());
-            txtValorDespesa.setText(tabelaDespesas.getValueAt(tabelaDespesas.getSelectedRow(), 4).toString());
+    private void BtnLimparActionPerformed(java.awt.event.ActionEvent evt) {//GEN-FIRST:event_BtnLimparActionPerformed
+        limparCampos();
+    }//GEN-LAST:event_BtnLimparActionPerformed
+
+    private void cbTipoActionPerformed(java.awt.event.ActionEvent evt) {//GEN-FIRST:event_cbTipoActionPerformed
+        configurarCategorias();
+    }//GEN-LAST:event_cbTipoActionPerformed
+
+    private void tabelaExtratoMouseClicked(java.awt.event.MouseEvent evt) {//GEN-FIRST:event_tabelaExtratoMouseClicked
+        if (tabelaExtrato.getSelectedRow() != -1) {
+            int linha = tabelaExtrato.getSelectedRow();
+
+            // Pega dados da tabela e joga nos campos
+            idEmEdicao = (int) tabelaExtrato.getValueAt(linha, 0);
+            txtData.setText(tabelaExtrato.getValueAt(linha, 1).toString());
+            txtDescricao.setText(tabelaExtrato.getValueAt(linha, 2).toString());
+
+            String tipo = tabelaExtrato.getValueAt(linha, 3).toString();
+            cbTipo.setSelectedItem(tipo);
+            configurarCategorias(); // Atualiza a lista de categorias antes de selecionar
+
+            String categoria = tabelaExtrato.getValueAt(linha, 4).toString();
+            cbCategoria.setSelectedItem(categoria);
+
+            txtValor.setText(tabelaExtrato.getValueAt(linha, 5).toString());
         }
-    }//GEN-LAST:event_tabelaDespesasMouseClicked
+    }//GEN-LAST:event_tabelaExtratoMouseClicked
 
-    private void btnSalvarReceitaActionPerformed(java.awt.event.ActionEvent evt) {//GEN-FIRST:event_btnSalvarReceitaActionPerformed
-        try {
-        Lancamento l = new Lancamento();
-        l.setDescricao(txtDescReceita.getText());
-        l.setCategoria(cbCatReceita.getSelectedItem().toString());
-        l.setTipo("RECEITA");
-        
-        String valorTexto = txtValorReceita.getText();
-        valorTexto = valorTexto.replace("R$", "").replace(" ", "").replace(".", "");
-        valorTexto = valorTexto.replace(",", ".");
-        l.setValor(Double.parseDouble(valorTexto));
-
-        java.time.format.DateTimeFormatter formatador = java.time.format.DateTimeFormatter.ofPattern("dd/MM/yyyy");
-        l.setData(LocalDate.parse(txtDataReceita.getText(), formatador));
-
-        if (idEmEdicaoReceita == 0) {
-            dao.salvar(l);
-            JOptionPane.showMessageDialog(this, "Receita Salva!");
-        } else {
-            l.setId(idEmEdicaoReceita);
-            dao.atualizar(l);
-            JOptionPane.showMessageDialog(this, "Receita Atualizada!");
-            idEmEdicaoReceita = 0;
-        }
-
-        atualizarTabelaReceitas();
-        atualizarDashboard(); 
-        limparCamposReceita();
-
-    } catch (Exception e) {
-        e.printStackTrace(); 
-        JOptionPane.showMessageDialog(this, "Erro: Verifique se a data está dia/mês/ano (ex: 02/12/2025) e o valor está correto.");
-    }
-    }//GEN-LAST:event_btnSalvarReceitaActionPerformed
-
-    private void btnExcluirReceitaActionPerformed(java.awt.event.ActionEvent evt) {//GEN-FIRST:event_btnExcluirReceitaActionPerformed
-        if (tabelaReceita.getSelectedRow() != -1) {
-            int id = (int) tabelaReceita.getValueAt(tabelaReceita.getSelectedRow(), 0);
-            int confirm = JOptionPane.showConfirmDialog(this, "Tem certeza que deseja excluir?", "Atenção", JOptionPane.YES_NO_OPTION);
-            if(confirm == JOptionPane.YES_OPTION){
-                dao.excluir(id);
-                atualizarTabelaReceitas();
-                limparCamposReceita();
-            }
-        } else {
-            JOptionPane.showMessageDialog(this, "Selecione uma linha para excluir.");
-        }
-    }//GEN-LAST:event_btnExcluirReceitaActionPerformed
-
-    private void tabelaReceitaMouseClicked(java.awt.event.MouseEvent evt) {//GEN-FIRST:event_tabelaReceitaMouseClicked
-       if (tabelaReceita.getSelectedRow() != -1) {
-            idEmEdicaoReceita = (int) tabelaReceita.getValueAt(tabelaReceita.getSelectedRow(), 0);
-            txtDataReceita.setText(tabelaReceita.getValueAt(tabelaReceita.getSelectedRow(), 1).toString());
-            txtDescReceita.setText(tabelaReceita.getValueAt(tabelaReceita.getSelectedRow(), 2).toString());
-            cbCatReceita.setSelectedItem(tabelaReceita.getValueAt(tabelaReceita.getSelectedRow(), 3).toString());
-            txtValorReceita.setText(tabelaReceita.getValueAt(tabelaReceita.getSelectedRow(), 4).toString());
-        }
-    }//GEN-LAST:event_tabelaReceitaMouseClicked
-
-    private void jTabbedPaneStateChanged(javax.swing.event.ChangeEvent evt) {//GEN-FIRST:event_jTabbedPaneStateChanged
-        if (jTabbedPane.getSelectedIndex() == 0) { 
-        atualizarDashboard();
-    }
-    }//GEN-LAST:event_jTabbedPaneStateChanged
-
-    private void txtDataDespesaActionPerformed(java.awt.event.ActionEvent evt) {//GEN-FIRST:event_txtDataDespesaActionPerformed
-        // TODO add your handling code here:
-    }//GEN-LAST:event_txtDataDespesaActionPerformed
-
-    private void btnIrDespesasActionPerformed(java.awt.event.ActionEvent evt) {//GEN-FIRST:event_btnIrDespesasActionPerformed
-       jTabbedPane.setSelectedIndex(1);
-    }//GEN-LAST:event_btnIrDespesasActionPerformed
-
-    private void btnIrReceitasActionPerformed(java.awt.event.ActionEvent evt) {//GEN-FIRST:event_btnIrReceitasActionPerformed
-        jTabbedPane.setSelectedIndex(2);
-    }//GEN-LAST:event_btnIrReceitasActionPerformed
-
-    private void btnLimparDespesaActionPerformed(java.awt.event.ActionEvent evt) {//GEN-FIRST:event_btnLimparDespesaActionPerformed
-        limparCamposDespesa();
-    }//GEN-LAST:event_btnLimparDespesaActionPerformed
-
-    private void btnLimparReceitaActionPerformed(java.awt.event.ActionEvent evt) {//GEN-FIRST:event_btnLimparReceitaActionPerformed
-        limparCamposReceita();
-    }//GEN-LAST:event_btnLimparReceitaActionPerformed
+    private void BtnImprimirActionPerformed(java.awt.event.ActionEvent evt) {//GEN-FIRST:event_BtnImprimirActionPerformed
+        gerarRelatorio("relatorio");
+    }//GEN-LAST:event_BtnImprimirActionPerformed
 
     /**
      * @param args the command line arguments
@@ -938,55 +648,35 @@ public class TelaPrincipal extends javax.swing.JFrame {
         java.awt.EventQueue.invokeLater(new Runnable() {
             public void run() {
                 new TelaPrincipal().setVisible(true);
-        }
-    });
+            }
+        });
     }
 
     // Variables declaration - do not modify//GEN-BEGIN:variables
-    private javax.swing.JButton btnExcluirDespesa;
-    private javax.swing.JButton btnExcluirReceita;
-    private javax.swing.JButton btnIrDespesas;
-    private javax.swing.JButton btnIrReceitas;
-    private javax.swing.JButton btnLimparDespesa;
-    private javax.swing.JButton btnLimparReceita;
-    private javax.swing.JButton btnSalvarDespesa;
-    private javax.swing.JButton btnSalvarReceita;
-    private javax.swing.JComboBox<String> cbCatDespesa;
-    private javax.swing.JComboBox<String> cbCatReceita;
-    private javax.swing.JLabel jLabel1;
-    private javax.swing.JLabel jLabel10;
+    private javax.swing.JButton BtnExcluir;
+    private javax.swing.JButton BtnImprimir;
+    private javax.swing.JButton BtnLimpar;
+    private javax.swing.JButton BtnSalvar;
+    private javax.swing.JComboBox<String> cbCategoria;
+    private javax.swing.JComboBox<String> cbTipo;
     private javax.swing.JLabel jLabel11;
     private javax.swing.JLabel jLabel12;
     private javax.swing.JLabel jLabel13;
     private javax.swing.JLabel jLabel14;
-    private javax.swing.JLabel jLabel2;
-    private javax.swing.JLabel jLabel3;
-    private javax.swing.JLabel jLabel4;
-    private javax.swing.JLabel jLabel5;
-    private javax.swing.JLabel jLabel6;
-    private javax.swing.JLabel jLabel7;
-    private javax.swing.JLabel jLabel8;
-    private javax.swing.JLabel jLabel9;
+    private javax.swing.JLabel jLabel15;
+    private javax.swing.JLabel jLabel16;
+    private javax.swing.JLabel jLabel17;
+    private javax.swing.JLabel jLabel18;
     private javax.swing.JPanel jPanel1;
-    private javax.swing.JPanel jPanel2;
-    private javax.swing.JPanel jPanel3;
     private javax.swing.JPanel jPanel4;
     private javax.swing.JPanel jPanel5;
-    private javax.swing.JPanel jPanel6;
-    private javax.swing.JPanel jPanel7;
     private javax.swing.JScrollPane jScrollPane1;
-    private javax.swing.JScrollPane jScrollPane2;
-    private javax.swing.JTabbedPane jTabbedPane;
     private javax.swing.JLabel lblSaldo;
     private javax.swing.JLabel lblTotalDespesa;
     private javax.swing.JLabel lblTotalReceita;
-    private javax.swing.JTable tabelaDespesas;
-    private javax.swing.JTable tabelaReceita;
-    private javax.swing.JTextField txtDataDespesa;
-    private javax.swing.JTextField txtDataReceita;
-    private javax.swing.JTextField txtDescDespesa;
-    private javax.swing.JTextField txtDescReceita;
-    private javax.swing.JTextField txtValorDespesa;
-    private javax.swing.JTextField txtValorReceita;
+    private javax.swing.JTable tabelaExtrato;
+    private javax.swing.JTextField txtData;
+    private javax.swing.JTextField txtDescricao;
+    private javax.swing.JTextField txtValor;
     // End of variables declaration//GEN-END:variables
 }

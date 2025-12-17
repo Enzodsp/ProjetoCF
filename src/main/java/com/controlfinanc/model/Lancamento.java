@@ -9,19 +9,26 @@ public class Lancamento {
     private String tipo;      
     private String categoria; 
     private LocalDate data;
+    private int usuarioId;
 
     public Lancamento() {}
 
-    public Lancamento(int id, String descricao, double valor, String tipo, String categoria, LocalDate data) {
+    public Lancamento(int id, String descricao, double valor, String tipo, String categoria, LocalDate data, int usuarioId) {
         this.id = id;
         this.descricao = descricao;
         this.valor = valor;
         this.tipo = tipo;
         this.categoria = categoria;
         this.data = data;
+        this.usuarioId = usuarioId;
     }
-    
 
+    public int getUsuarioId() {
+        return usuarioId;
+    }
+    public void setUsuarioId(int usuarioId) {
+        this.usuarioId = usuarioId;
+    } 
     public String getCategoria() { return categoria; }
     public void setCategoria(String categoria) { this.categoria = categoria; }
     public int getId() { return id; }
